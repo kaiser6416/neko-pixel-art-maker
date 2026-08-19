@@ -1,0 +1,546 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>ねこドット絵メーカー</title>
+<meta name="description" content="猫の写真をアップロードして、背景透過のドット絵（16×16/32×32/64×64）に変換できる無料ツール。すべてブラウザ内で処理され、画像は外部に送信されません。" />
+<style>
+  :root {
+    --bg: #fbf6ee;
+    --card: #ffffff;
+    --ink: #2b2320;
+    --ink-muted: #7a6f63;
+    --accent: #d97b3f;
+    --accent-dark: #b85f28;
+    --accent-pale: rgba(217,123,63,0.12);
+    --border: #e8ddcd;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Hiragino Sans', 'Yu Gothic', sans-serif;
+    background: var(--bg);
+    color: var(--ink);
+    line-height: 1.7;
+    padding: 32px 16px 64px;
+  }
+  .container { max-width: 720px; margin: 0 auto; }
+  header { margin-bottom: 28px; text-align: center; }
+  .title { font-size: 26px; font-weight: 800; margin-bottom: 8px; }
+  .sub { font-size: 13px; color: var(--ink-muted); line-height: 1.85; }
+
+  .dropzone {
+    position: relative;
+    border: 2px dashed var(--border);
+    border-radius: 16px;
+    background: var(--card);
+    padding: 56px 24px;
+    text-align: center;
+    cursor: pointer;
+    transition: border-color 0.2s, background 0.2s;
+  }
+  .dropzone:hover, .dropzone.active { border-color: var(--accent); background: var(--accent-pale); }
+  .dropzone .icon { font-size: 32px; margin-bottom: 12px; }
+  .dropzone .text { font-size: 13px; color: var(--ink-muted); }
+  .dropzone input[type=file] { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
+
+  .error { color: #c0392b; font-size: 13px; margin-top: 12px; }
+  .hidden { display: none !important; }
+
+  .work-area { display: flex; flex-direction: column; gap: 28px; }
+
+  .preview-row { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  @media (max-width: 520px) { .preview-row { grid-template-columns: 1fr; } }
+
+  .preview-block { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 14px; }
+  .preview-label { font-size: 11px; color: var(--ink-muted); margin-bottom: 10px; letter-spacing: 0.5px; }
+
+  #sourceCanvas { width: 100%; aspect-ratio: 1/1; border-radius: 8px; display: block; }
+  #sourceCanvas.picking { cursor: crosshair; outline: 2px solid var(--accent); }
+
+  .checker-wrap {
+    display: flex; align-items: center; justify-content: center;
+    border-radius: 8px; overflow: hidden;
+    background-image:
+      linear-gradient(45deg, #ddd 25%, transparent 25%),
+      linear-gradient(-45deg, #ddd 25%, transparent 25%),
+      linear-gradient(45deg, transparent 75%, #ddd 75%),
+      linear-gradient(-45deg, transparent 75%, #ddd 75%);
+    background-size: 16px 16px;
+    background-position: 0 0, 0 8px, 8px -8px, -8px 0px;
+    background-color: #f2f2f2;
+  }
+  #outputCanvas {
+    image-rendering: pixelated;
+    image-rendering: -moz-crisp-edges;
+    display: block;
+    max-width: 100%;
+  }
+
+  .controls { display: flex; flex-direction: column; gap: 22px; background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 22px; }
+  .control-group { display: flex; flex-direction: column; gap: 12px; padding-bottom: 20px; border-bottom: 1px solid var(--border); }
+  .control-group:last-child { border-bottom: none; padding-bottom: 0; }
+  .control-title { font-size: 12px; font-weight: 700; letter-spacing: 0.5px; }
+
+  .size-btns { display: flex; gap: 10px; flex-wrap: wrap; }
+  .size-btn {
+    font-size: 13px; font-weight: 700; padding: 10px 18px; border-radius: 20px;
+    border: 1px solid var(--border); background: var(--bg); color: var(--ink-muted);
+    cursor: pointer; transition: all 0.15s;
+  }
+  .size-btn.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+
+  label.checkbox-row { display: flex; align-items: center; gap: 8px; font-size: 13px; cursor: pointer; }
+  label.slider-row { display: flex; flex-direction: column; gap: 6px; font-size: 12px; color: var(--ink-muted); }
+  label.slider-row input[type=range] { width: 100%; accent-color: var(--accent); }
+
+  .eyedrop-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .color-swatch { width: 24px; height: 24px; border-radius: 50%; border: 2px solid var(--card); box-shadow: 0 0 0 1px var(--border); display: inline-block; }
+
+  .download-row { display: flex; flex-direction: column; gap: 12px; }
+  .scaled-download { display: flex; gap: 10px; }
+  .scale-select { flex: 1; font-size: 13px; padding: 10px 12px; border-radius: 20px; border: 1px solid var(--border); background: var(--bg); color: var(--ink); }
+
+  .btn-primary { background: var(--accent); color: #fff; font-size: 13px; font-weight: 700; padding: 10px 22px; border-radius: 20px; border: none; cursor: pointer; white-space: nowrap; transition: opacity 0.2s; }
+  .btn-primary:hover { opacity: 0.85; }
+  .btn-ghost { background: transparent; color: var(--ink); font-size: 13px; font-weight: 700; padding: 10px 22px; border-radius: 20px; border: 1px solid var(--border); cursor: pointer; transition: border-color 0.2s, color 0.2s; }
+  .btn-ghost:hover { border-color: var(--accent); color: var(--accent-dark); }
+  .btn-small { background: var(--bg); color: var(--ink); font-size: 12px; padding: 8px 16px; border-radius: 16px; border: 1px solid var(--border); cursor: pointer; }
+  .btn-small:hover { border-color: var(--accent); }
+  .btn-link { background: none; border: none; color: var(--accent); font-size: 12px; font-weight: 700; cursor: pointer; padding: 4px 0; text-align: left; align-self: flex-start; }
+  .btn-link:hover { opacity: 0.7; }
+
+  footer { margin-top: 40px; text-align: center; font-size: 11px; color: var(--ink-muted); }
+</style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <p class="title">🐱 ねこドット絵メーカー</p>
+      <p class="sub">
+        猫の写真をアップロードすると、背景を透過したドット絵に変換できます。<br />
+        サイズは16×16・32×32・64×64から選べます。すべてブラウザ内で処理され、画像は外部に送信されません。
+      </p>
+    </header>
+
+    <div id="dropzone" class="dropzone">
+      <p class="icon">📷</p>
+      <p class="text">タップまたはドラッグ＆ドロップで<br />猫の写真をアップロード</p>
+      <input id="fileInput" type="file" accept="image/*" />
+    </div>
+
+    <p id="error" class="error hidden"></p>
+
+    <div id="workArea" class="work-area hidden">
+      <div class="preview-row">
+        <div class="preview-block">
+          <p id="sourceLabel" class="preview-label">元画像</p>
+          <canvas id="sourceCanvas"></canvas>
+        </div>
+        <div class="preview-block">
+          <p class="preview-label">ドット絵プレビュー</p>
+          <div class="checker-wrap">
+            <canvas id="outputCanvas" style="width:256px;height:256px;"></canvas>
+          </div>
+        </div>
+      </div>
+
+      <div class="controls">
+        <div class="control-group">
+          <p class="control-title">サイズ</p>
+          <div class="size-btns" id="sizeBtns">
+            <button type="button" class="size-btn" data-size="16">16×16</button>
+            <button type="button" class="size-btn active" data-size="32">32×32</button>
+            <button type="button" class="size-btn" data-size="64">64×64</button>
+          </div>
+        </div>
+
+        <div class="control-group">
+          <label class="checkbox-row">
+            <input id="bgRemoval" type="checkbox" checked />
+            背景を透過する
+          </label>
+
+          <div id="bgControls">
+            <label class="slider-row">
+              透過の強さ：<span id="toleranceVal">35</span>
+              <input id="tolerance" type="range" min="5" max="100" value="35" />
+            </label>
+            <div class="eyedrop-row">
+              <button type="button" id="pickBtn" class="btn-small">🎯 背景色をスポイトで指定</button>
+              <span id="colorSwatch" class="color-swatch hidden"></span>
+              <button type="button" id="resetColorBtn" class="btn-link hidden">自動検出に戻す</button>
+            </div>
+          </div>
+
+          <label class="checkbox-row">
+            <input id="crisp" type="checkbox" checked />
+            エッジをくっきりさせる（推奨）
+          </label>
+        </div>
+
+        <div class="control-group">
+          <p class="control-title">保存</p>
+          <div class="download-row">
+            <button type="button" id="downloadNative" class="btn-ghost">実寸で保存</button>
+            <div class="scaled-download">
+              <select id="scaleSelect" class="scale-select"></select>
+              <button type="button" id="downloadScaled" class="btn-primary">拡大して保存</button>
+            </div>
+          </div>
+          <button type="button" id="resetBtn" class="btn-link">別の写真を選び直す</button>
+        </div>
+      </div>
+    </div>
+
+    <footer>すべての処理はこの端末のブラウザ内で完結します。画像はサーバーに送信されません。</footer>
+  </div>
+
+<script>
+(function () {
+  'use strict';
+
+  var WORK_SIZE = 480;
+
+  var dropzone = document.getElementById('dropzone');
+  var fileInput = document.getElementById('fileInput');
+  var errorEl = document.getElementById('error');
+  var workArea = document.getElementById('workArea');
+  var sourceCanvas = document.getElementById('sourceCanvas');
+  var outputCanvas = document.getElementById('outputCanvas');
+  var sourceLabel = document.getElementById('sourceLabel');
+  var sizeBtns = document.getElementById('sizeBtns');
+  var bgRemovalCb = document.getElementById('bgRemoval');
+  var bgControls = document.getElementById('bgControls');
+  var toleranceInput = document.getElementById('tolerance');
+  var toleranceVal = document.getElementById('toleranceVal');
+  var pickBtn = document.getElementById('pickBtn');
+  var colorSwatch = document.getElementById('colorSwatch');
+  var resetColorBtn = document.getElementById('resetColorBtn');
+  var crispCb = document.getElementById('crisp');
+  var scaleSelect = document.getElementById('scaleSelect');
+  var downloadNativeBtn = document.getElementById('downloadNative');
+  var downloadScaledBtn = document.getElementById('downloadScaled');
+  var resetBtn = document.getElementById('resetBtn');
+
+  var state = {
+    imgLoaded: false,
+    size: 32,
+    bgRemoval: true,
+    tolerance: 35,
+    crisp: true,
+    pickMode: false,
+    customColor: null,
+    exportScale: 8
+  };
+
+  var reprocessTimer = null;
+
+  function colorDist(r1, g1, b1, r2, g2, b2) {
+    var dr = r1 - r2, dg = g1 - g2, db = b1 - b2;
+    return Math.sqrt(dr * dr + dg * dg + db * db);
+  }
+
+  function autoRefColor(imageData) {
+    var w = imageData.width, h = imageData.height, data = imageData.data;
+    var r = 0, g = 0, b = 0, count = 0;
+    var x, y, o;
+    for (x = 0; x < w; x++) {
+      for (var yi = 0; yi < 2; yi++) {
+        y = yi === 0 ? 0 : h - 1;
+        o = (y * w + x) * 4;
+        r += data[o]; g += data[o + 1]; b += data[o + 2]; count++;
+      }
+    }
+    for (y = 1; y < h - 1; y++) {
+      for (var xi = 0; xi < 2; xi++) {
+        x = xi === 0 ? 0 : w - 1;
+        o = (y * w + x) * 4;
+        r += data[o]; g += data[o + 1]; b += data[o + 2]; count++;
+      }
+    }
+    return { r: r / count, g: g / count, b: b / count };
+  }
+
+  function removeBackground(imageData, refColor, tolerance) {
+    var w = imageData.width, h = imageData.height, data = imageData.data;
+    var threshold = (tolerance / 100) * Math.sqrt(3 * 255 * 255);
+    var visited = new Uint8Array(w * h);
+    var queue = new Int32Array(w * h);
+    var qHead = 0, qTail = 0;
+
+    function idx(x, y) { return y * w + x; }
+    function withinTol(i) {
+      var o = i * 4;
+      return colorDist(data[o], data[o + 1], data[o + 2], refColor.r, refColor.g, refColor.b) <= threshold;
+    }
+
+    var x, y, i;
+    for (x = 0; x < w; x++) {
+      for (var yi = 0; yi < 2; yi++) {
+        y = yi === 0 ? 0 : h - 1;
+        i = idx(x, y);
+        if (!visited[i] && withinTol(i)) { visited[i] = 1; queue[qTail++] = i; }
+      }
+    }
+    for (y = 0; y < h; y++) {
+      for (var xi = 0; xi < 2; xi++) {
+        x = xi === 0 ? 0 : w - 1;
+        i = idx(x, y);
+        if (!visited[i] && withinTol(i)) { visited[i] = 1; queue[qTail++] = i; }
+      }
+    }
+
+    while (qHead < qTail) {
+      i = queue[qHead++];
+      x = i % w;
+      y = (i / w) | 0;
+      var neighbors = [[x - 1, y], [x + 1, y], [x, y - 1], [x, y + 1]];
+      for (var n = 0; n < 4; n++) {
+        var nx = neighbors[n][0], ny = neighbors[n][1];
+        if (nx < 0 || ny < 0 || nx >= w || ny >= h) continue;
+        var ni = idx(nx, ny);
+        if (visited[ni]) continue;
+        if (withinTol(ni)) { visited[ni] = 1; queue[qTail++] = ni; }
+      }
+    }
+
+    for (i = 0; i < w * h; i++) {
+      if (visited[i]) data[i * 4 + 3] = 0;
+    }
+    return imageData;
+  }
+
+  function drawSquareCover(ctx, img, size) {
+    var iw = img.width, ih = img.height;
+    var scale = Math.max(size / iw, size / ih);
+    var dw = iw * scale, dh = ih * scale;
+    var dx = (size - dw) / 2, dy = (size - dh) / 2;
+    ctx.clearRect(0, 0, size, size);
+    ctx.drawImage(img, dx, dy, dw, dh);
+  }
+
+  function downloadCanvas(canvas, filename) {
+    canvas.toBlob(function (blob) {
+      if (!blob) return;
+      var url = URL.createObjectURL(blob);
+      var a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    }, 'image/png');
+  }
+
+  function scheduleReprocess() {
+    if (!state.imgLoaded) return;
+    if (reprocessTimer) clearTimeout(reprocessTimer);
+    reprocessTimer = setTimeout(reprocess, 80);
+  }
+
+  function reprocess() {
+    outputCanvas.width = state.size;
+    outputCanvas.height = state.size;
+
+    var srcCtx = sourceCanvas.getContext('2d');
+    var srcData = srcCtx.getImageData(0, 0, sourceCanvas.width, sourceCanvas.height);
+
+    var workCanvas;
+    if (state.bgRemoval) {
+      var cloned = new ImageData(new Uint8ClampedArray(srcData.data), srcData.width, srcData.height);
+      var ref = state.customColor || autoRefColor(srcData);
+      removeBackground(cloned, ref, state.tolerance);
+      workCanvas = document.createElement('canvas');
+      workCanvas.width = sourceCanvas.width;
+      workCanvas.height = sourceCanvas.height;
+      workCanvas.getContext('2d').putImageData(cloned, 0, 0);
+    } else {
+      workCanvas = sourceCanvas;
+    }
+
+    var outCtx = outputCanvas.getContext('2d');
+    outCtx.clearRect(0, 0, state.size, state.size);
+    outCtx.imageSmoothingEnabled = true;
+    outCtx.imageSmoothingQuality = 'high';
+    outCtx.drawImage(workCanvas, 0, 0, state.size, state.size);
+
+    if (state.crisp) {
+      var outData = outCtx.getImageData(0, 0, state.size, state.size);
+      var d = outData.data;
+      for (var i = 3; i < d.length; i += 4) {
+        d[i] = d[i] < 128 ? 0 : 255;
+      }
+      outCtx.putImageData(outData, 0, 0);
+    }
+  }
+
+  function updateScaleOptions() {
+    var options = [1, 2, 4, 8, 16, 32].filter(function (s) { return state.size * s <= 1024; });
+    var best = options.reduce(function (b, s) {
+      return Math.abs(state.size * s - 256) < Math.abs(state.size * b - 256) ? s : b;
+    }, options[0]);
+    state.exportScale = best;
+    scaleSelect.innerHTML = '';
+    options.forEach(function (s) {
+      var opt = document.createElement('option');
+      opt.value = s;
+      opt.textContent = '×' + s + '（' + (state.size * s) + 'px）';
+      if (s === best) opt.selected = true;
+      scaleSelect.appendChild(opt);
+    });
+  }
+
+  function loadFile(file) {
+    if (!file) return;
+    if (!file.type || file.type.indexOf('image/') !== 0) {
+      showError('画像ファイルを選択してください');
+      return;
+    }
+    hideError();
+    var url = URL.createObjectURL(file);
+    var img = new Image();
+    img.onload = function () {
+      sourceCanvas.width = WORK_SIZE;
+      sourceCanvas.height = WORK_SIZE;
+      var ctx = sourceCanvas.getContext('2d');
+      drawSquareCover(ctx, img, WORK_SIZE);
+      URL.revokeObjectURL(url);
+      state.customColor = null;
+      colorSwatch.classList.add('hidden');
+      resetColorBtn.classList.add('hidden');
+      state.imgLoaded = true;
+      dropzone.classList.add('hidden');
+      workArea.classList.remove('hidden');
+      scheduleReprocess();
+    };
+    img.onerror = function () {
+      showError('画像を読み込めませんでした');
+      URL.revokeObjectURL(url);
+    };
+    img.src = url;
+  }
+
+  function showError(msg) {
+    errorEl.textContent = msg;
+    errorEl.classList.remove('hidden');
+  }
+  function hideError() {
+    errorEl.classList.add('hidden');
+  }
+
+  fileInput.addEventListener('change', function (e) {
+    loadFile(e.target.files && e.target.files[0]);
+  });
+
+  dropzone.addEventListener('dragover', function (e) {
+    e.preventDefault();
+    dropzone.classList.add('active');
+  });
+  dropzone.addEventListener('dragleave', function () {
+    dropzone.classList.remove('active');
+  });
+  dropzone.addEventListener('drop', function (e) {
+    e.preventDefault();
+    dropzone.classList.remove('active');
+    loadFile(e.dataTransfer.files && e.dataTransfer.files[0]);
+  });
+
+  sizeBtns.addEventListener('click', function (e) {
+    var btn = e.target.closest('.size-btn');
+    if (!btn) return;
+    state.size = Number(btn.dataset.size);
+    Array.prototype.forEach.call(sizeBtns.children, function (b) {
+      b.classList.toggle('active', b === btn);
+    });
+    updateScaleOptions();
+    scheduleReprocess();
+  });
+
+  bgRemovalCb.addEventListener('change', function () {
+    state.bgRemoval = bgRemovalCb.checked;
+    bgControls.classList.toggle('hidden', !state.bgRemoval);
+    scheduleReprocess();
+  });
+
+  toleranceInput.addEventListener('input', function () {
+    state.tolerance = Number(toleranceInput.value);
+    toleranceVal.textContent = state.tolerance;
+    scheduleReprocess();
+  });
+
+  crispCb.addEventListener('change', function () {
+    state.crisp = crispCb.checked;
+    scheduleReprocess();
+  });
+
+  pickBtn.addEventListener('click', function () {
+    state.pickMode = !state.pickMode;
+    pickBtn.textContent = state.pickMode ? 'キャンセル' : '🎯 背景色をスポイトで指定';
+    sourceCanvas.classList.toggle('picking', state.pickMode);
+    sourceLabel.textContent = state.pickMode ? '元画像（背景をクリックして指定）' : '元画像';
+  });
+
+  sourceCanvas.addEventListener('click', function (e) {
+    if (!state.pickMode) return;
+    var rect = sourceCanvas.getBoundingClientRect();
+    var scaleX = sourceCanvas.width / rect.width;
+    var scaleY = sourceCanvas.height / rect.height;
+    var x = Math.min(sourceCanvas.width - 1, Math.max(0, Math.floor((e.clientX - rect.left) * scaleX)));
+    var y = Math.min(sourceCanvas.height - 1, Math.max(0, Math.floor((e.clientY - rect.top) * scaleY)));
+    var ctx = sourceCanvas.getContext('2d');
+    var px = ctx.getImageData(x, y, 1, 1).data;
+    state.customColor = { r: px[0], g: px[1], b: px[2] };
+    colorSwatch.style.background = 'rgb(' + px[0] + ',' + px[1] + ',' + px[2] + ')';
+    colorSwatch.classList.remove('hidden');
+    resetColorBtn.classList.remove('hidden');
+    state.pickMode = false;
+    pickBtn.textContent = '🎯 背景色をスポイトで指定';
+    sourceCanvas.classList.remove('picking');
+    sourceLabel.textContent = '元画像';
+    scheduleReprocess();
+  });
+
+  resetColorBtn.addEventListener('click', function () {
+    state.customColor = null;
+    colorSwatch.classList.add('hidden');
+    resetColorBtn.classList.add('hidden');
+    scheduleReprocess();
+  });
+
+  scaleSelect.addEventListener('change', function () {
+    state.exportScale = Number(scaleSelect.value);
+  });
+
+  downloadNativeBtn.addEventListener('click', function () {
+    downloadCanvas(outputCanvas, 'neko-dot-' + state.size + 'x' + state.size + '.png');
+  });
+
+  downloadScaledBtn.addEventListener('click', function () {
+    var scaled = document.createElement('canvas');
+    scaled.width = state.size * state.exportScale;
+    scaled.height = state.size * state.exportScale;
+    var ctx = scaled.getContext('2d');
+    ctx.imageSmoothingEnabled = false;
+    ctx.drawImage(outputCanvas, 0, 0, scaled.width, scaled.height);
+    downloadCanvas(scaled, 'neko-dot-' + state.size + 'x' + state.size + '_x' + state.exportScale + '.png');
+  });
+
+  resetBtn.addEventListener('click', function () {
+    state.imgLoaded = false;
+    state.customColor = null;
+    state.pickMode = false;
+    fileInput.value = '';
+    colorSwatch.classList.add('hidden');
+    resetColorBtn.classList.add('hidden');
+    workArea.classList.add('hidden');
+    dropzone.classList.remove('hidden');
+    hideError();
+  });
+
+  updateScaleOptions();
+})();
+</script>
+</body>
+</html>
